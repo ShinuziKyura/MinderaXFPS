@@ -4,6 +4,16 @@
 
 namespace
 {
+	// Theory: https://en.wikipedia.org/wiki/Supporting_hyperplane
+	// In summary, for each plane of the player's view frustum,
+	// we want to compare the first vertex of an actor (or its bounds)
+	// that would appear in the player's view if the actor were moving in the direction of the frustum,
+	// i.e., for the left plane, we want to find the vertex that, projected on the screen,
+	// would be the rightmost vertex of the actor.
+	// We'll do this for each plane, and if all points are beyond the respective planes,
+	// we'll test each point later through a raycast (from the view's origin).
+	// We need to find only a single raycast which hits to stop the actor from moving.
+	
 	template <class AllocatorType>
 	FVector ComputeProjectedSupportVertex(TArray<FVector, AllocatorType> const& PolyVertexes,
 										  FMatrix const& ViewProjMat, FIntRect const& ViewRect,
@@ -29,7 +39,26 @@ namespace
 	}
 }
 
-FMatrix AMXFPSGameStateBase::GetPlayerViewMatrix() const
+void AMXFPSGameStateBase::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// Initialize ViewMatrices with something, just to avoid NAN warnings.
+	//UpdateViewMatrices(GetWorld(), LEVELTICK_All, 0.f);
+	
+	PreActorTickDelegateHandle = FWorldDelegates::OnWorldPreActorTick
+												 .AddUObject(this, &AMXFPSGameStateBase::UpdateViewMatrices);
+}
+
+void AMXFPSGameStateBase::EndPlay(EEndPlayReason::Type const EndPlayReason)
+{
+	Super::EndPlay(EndPlayReason);
+	
+	FWorldDelegates::OnWorldPreActorTick.Remove(PreActorTickDelegateHandle);
+	PreActorTickDelegateHandle.Reset();
+}
+
+FMatrix AMXFPSGameStateBase::GetPlayerViewProjMatrix() const
 {
 	return CachedViewMatrices.GetViewProjectionMatrix();
 }
@@ -41,6 +70,8 @@ FVector AMXFPSGameStateBase::GetPlayerViewOrigin() const
 
 bool AMXFPSGameStateBase::IsActorWithinPlayerFrustum(AActor* Actor, TArray<FVector>& OutSupportVertexes) const
 {
+	QUICK_SCOPE_CYCLE_COUNTER(STAT_GameState_IsActorWithinPlayerFrustum);
+	
 	FBox ActorBounds = Actor->GetComponentsBoundingBox();
 
 	FVector ActorBoundsPos = ActorBounds.GetCenter();
@@ -56,14 +87,8 @@ bool AMXFPSGameStateBase::IsActorWithinPlayerFrustum(AActor* Actor, TArray<FVect
 	ActorBoundsVertexes.Add(ActorBoundsPos + FVector(-ActorBoundsSizeAbs.X, -ActorBoundsSizeAbs.Y, +ActorBoundsSizeAbs.Z));
 	ActorBoundsVertexes.Add(ActorBoundsPos + FVector(-ActorBoundsSizeAbs.X, -ActorBoundsSizeAbs.Y, -ActorBoundsSizeAbs.Z));
 
-	FMatrix InvViewRotMat = CachedViewInitOptions.ViewRotationMatrix.InverseFast();
 	FMatrix ViewProjMat = CachedViewMatrices.GetViewProjectionMatrix();
 	FIntRect ConstrainedViewRect = CachedViewInitOptions.GetConstrainedViewRect();
-
-	FVector WorldRightDir = InvViewRotMat.GetScaledAxis(EAxis::X);
-	FVector WorldLeftDir = -WorldRightDir;
-	FVector WorldUpDir = InvViewRotMat.GetScaledAxis(EAxis::Y);
-	FVector WorldDownDir = -WorldUpDir;
 
 	static FVector2D ScreenLeftDir(-1.f, 0.f);
 	static FVector2D ScreenRightDir(+1.f, 0.f);
@@ -75,9 +100,9 @@ bool AMXFPSGameStateBase::IsActorWithinPlayerFrustum(AActor* Actor, TArray<FVect
 	
 	FVector LeftSupportVertex = ComputeProjectedSupportVertex(ActorBoundsVertexes, ViewProjMat,
 															  ConstrainedViewRect, ScreenLeftDir);
-	float LeftSignedDistance = RightPlane.Flip().PlaneDot(LeftSupportVertex);
-	
-	if (LeftSignedDistance < 0)
+
+	float LeftSignedDistance = RightPlane.PlaneDot(LeftSupportVertex);
+	if (LeftSignedDistance > 0)
 	{
 		return false;
 	}
@@ -87,9 +112,9 @@ bool AMXFPSGameStateBase::IsActorWithinPlayerFrustum(AActor* Actor, TArray<FVect
 
 	FVector RightSupportVertex = ComputeProjectedSupportVertex(ActorBoundsVertexes, ViewProjMat,
 															   ConstrainedViewRect, ScreenRightDir);
-	float RightSignedDistance = LeftPlane.Flip().PlaneDot(RightSupportVertex);
-	
-	if (RightSignedDistance < 0)
+
+	float RightSignedDistance = LeftPlane.PlaneDot(RightSupportVertex);
+	if (RightSignedDistance > 0)
 	{
 		return false;
 	}
@@ -99,9 +124,9 @@ bool AMXFPSGameStateBase::IsActorWithinPlayerFrustum(AActor* Actor, TArray<FVect
 	
 	FVector TopSupportVertex = ComputeProjectedSupportVertex(ActorBoundsVertexes, ViewProjMat,
 															 ConstrainedViewRect, ScreenUpDir);
-	float TopSignedDistance = BottomPlane.Flip().PlaneDot(TopSupportVertex);
-	
-	if (TopSignedDistance < 0)
+
+	float TopSignedDistance = BottomPlane.PlaneDot(TopSupportVertex);
+	if (TopSignedDistance > 0)
 	{
 		return false;
 	}
@@ -111,14 +136,32 @@ bool AMXFPSGameStateBase::IsActorWithinPlayerFrustum(AActor* Actor, TArray<FVect
 	
 	FVector BottomSupportVertex = ComputeProjectedSupportVertex(ActorBoundsVertexes, ViewProjMat,
 																ConstrainedViewRect, ScreenDownDir);
-	float BottomSignedDistance = TopPlane.Flip().PlaneDot(BottomSupportVertex);
-	
-	if (BottomSignedDistance < 0)
+
+	float BottomSignedDistance = TopPlane.PlaneDot(BottomSupportVertex);
+	if (BottomSignedDistance > 0)
 	{
 		return false;
 	}
 
+	// Inverses are expensive, do it only if we really need it, and cache it for this frame
+	if (!CachedInvViewRotMat.IsSet())
+	{
+		QUICK_SCOPE_CYCLE_COUNTER(STAT_GameState_ComputeInvViewRotMat);
+		
+		CachedInvViewRotMat = CachedViewInitOptions.ViewRotationMatrix.InverseFast(); 
+	}
+	
+	FMatrix InvViewRotMat = CachedInvViewRotMat.GetValue();
+
+	// These are the axes of the player view's frame of reference
+	FVector WorldRightDir = InvViewRotMat.GetScaledAxis(EAxis::X);
+	FVector WorldLeftDir = -WorldRightDir;
+	FVector WorldUpDir = InvViewRotMat.GetScaledAxis(EAxis::Y);
+	FVector WorldDownDir = -WorldUpDir;
+
 	OutSupportVertexes.Reserve(4);
+	
+	// We'll push the vertexes into the mesh a bit to ensure the raycast always hits when it should
 	OutSupportVertexes.Add(LeftSupportVertex + WorldRightDir);
 	OutSupportVertexes.Add(RightSupportVertex + WorldLeftDir);
 	OutSupportVertexes.Add(TopSupportVertex + WorldDownDir);
@@ -127,28 +170,9 @@ bool AMXFPSGameStateBase::IsActorWithinPlayerFrustum(AActor* Actor, TArray<FVect
 	return true;
 }
 
-void AMXFPSGameStateBase::BeginPlay()
-{
-	Super::BeginPlay();
-
-	// Initialize ViewMatrices with something, just to avoid NAN warnings.
-//	UpdateViewMatrices(GetWorld(), LEVELTICK_All, 0.f);
-	
-	FWorldDelegates::OnWorldPreActorTick.AddUObject(this, &AMXFPSGameStateBase::UpdateViewMatrices);
-}
-
-void AMXFPSGameStateBase::EndPlay(EEndPlayReason::Type const EndPlayReason)
-{
-	Super::EndPlay(EndPlayReason);
-	
-	FWorldDelegates::OnWorldPreActorTick.RemoveAll(this);
-}
-
 void AMXFPSGameStateBase::UpdateViewMatrices(UWorld* World, ELevelTick, float)
 {
-	check(World);
-
-	QUICK_SCOPE_CYCLE_COUNTER(STAT_PlayerCharacter_UpdateViewMatrices);
+	QUICK_SCOPE_CYCLE_COUNTER(STAT_GameState_UpdateViewMatrices);
 	
 	APlayerController* PlayerController = World->GetFirstPlayerController();
 	ULocalPlayer* Player = PlayerController->GetLocalPlayer();
