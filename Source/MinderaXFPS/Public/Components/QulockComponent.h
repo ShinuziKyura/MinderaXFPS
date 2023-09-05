@@ -3,17 +3,17 @@
 #pragma once
 
 #include <CoreMinimal.h>
-#include <GameFramework/CharacterMovementComponent.h>
+#include <Components/ActorComponent.h>
 
-#include "QulockMovementComponent.generated.h"
+#include "QulockComponent.generated.h"
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
-class MINDERAXFPS_API UQulockMovementComponent : public /*UCharacterMovementComponent*/ UActorComponent
+class MINDERAXFPS_API UQulockComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
 public:	
-	UQulockMovementComponent(FObjectInitializer const& ObjectInitializer);
+	UQulockComponent(FObjectInitializer const& ObjectInitializer);
 
 	virtual void BeginPlay() override;
 

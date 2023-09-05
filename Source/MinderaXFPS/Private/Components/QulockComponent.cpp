@@ -1,6 +1,6 @@
 // Ricardo Santos, 2023
 
-#include "Components/QulockMovementComponent.h"
+#include "Components/QulockComponent.h"
 
 #include "Subsystem/PlayerViewDataCachingSubsystem.h"
 
@@ -54,14 +54,14 @@ namespace
 	}
 }
 
-UQulockMovementComponent::UQulockMovementComponent(FObjectInitializer const& ObjectInitializer)
+UQulockComponent::UQulockComponent(FObjectInitializer const& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	PrimaryComponentTick.bStartWithTickEnabled = false;
 }
 
-void UQulockMovementComponent::BeginPlay()
+void UQulockComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	
@@ -78,7 +78,7 @@ void UQulockMovementComponent::BeginPlay()
 	}
 }
 
-void UQulockMovementComponent::SetupPlayerToCheck(APlayerController* PlayerController)
+void UQulockComponent::SetupPlayerToCheck(APlayerController* PlayerController)
 {
 	bool bAlreadySetup;
 	PlayerControllerSet.Add(PlayerController, &bAlreadySetup);
@@ -89,7 +89,7 @@ void UQulockMovementComponent::SetupPlayerToCheck(APlayerController* PlayerContr
 	}
 }
 
-bool UQulockMovementComponent::CanMoveThisFrame() const
+bool UQulockComponent::CanMoveThisFrame() const
 {
 	if (bCanOwnerMove.IsSet())
 	{
@@ -99,7 +99,12 @@ bool UQulockMovementComponent::CanMoveThisFrame() const
 	bCanOwnerMove = true;
 	for (auto Player : PlayerControllerSet)
 	{
-		if (IsActorWithinPlayerView(Player, GetOwner()))
+		AActor* TargetActor = GetOwner();
+		if (auto Controller = Cast<AController>(TargetActor))
+		{
+			TargetActor = Controller->GetPawn();
+		}
+		if (IsActorWithinPlayerView(Player, TargetActor))
 		{
 			bCanOwnerMove = false;
 			break;
@@ -109,12 +114,27 @@ bool UQulockMovementComponent::CanMoveThisFrame() const
 	return bCanOwnerMove.GetValue();
 }
 
-bool UQulockMovementComponent::IsActorWithinPlayerView(APlayerController* Player, AActor* Actor) const
+// Having code in macros is not great for the maintainability of the code in the macros,
+// but it's great for the method that uses the macros, which has far more important logic.
+#if QULOCK_SHOULD_SHOW_DEBUG_TRACES
+#	define QULOCK_DRAW_DEBUG_TRACE() \
+		DrawDebugLine(World, ViewOrigin, Vertex,\
+					  FColor::Yellow, false, 1.f, 255)
+#	define QULOCK_DRAW_DEBUG_TRACE_RESULT() \
+		DrawDebugPoint(World, HitResult.Location, 10.f,\
+					   HitResult.GetActor() == Actor ? FColor::Green : FColor::Red, false, 1.f, 255)
+#	define QULOCK_BREAK_TRACE()
+#else
+#	define QULOCK_DRAW_DEBUG_TRACE()
+#	define QULOCK_DRAW_DEBUG_TRACE_RESULT()
+#	define QULOCK_BREAK_TRACE() \
+		break
+#endif
+
+bool UQulockComponent::IsActorWithinPlayerView(APlayerController* Player, AActor* Actor) const
 {
 	SCOPE_CYCLE_COUNTER(STAT_IsActorWithinPlayerView);
-
-	bool bIsInView = false;
-
+	
 	auto World = GetWorld();
 	auto PlayerViewData = GetCachingSubsystem()->GetPlayerViewData(Player);
 
@@ -131,79 +151,75 @@ bool UQulockMovementComponent::IsActorWithinPlayerView(APlayerController* Player
 	ViewProjMatrix.GetFrustumBottomPlane(FrustumPlaneArray[3]);
 #endif
 
+	bool bIsInView = false;
+
 	TArray<FVector> SupportVertexArray;
 	if (IsActorWithinPlayerFrustum(Player, Actor, SupportVertexArray))
 	{
 		bool bNewIsInView = true;
 		for (FVector Vertex : SupportVertexArray)
 		{
+			// Extend trace a bit to ensure it hits the geometry;
+			// We could make this into a UPROPERTY if necessary, but this is good enough for now.
 			constexpr float TraceTolerance = 10.f;
-		
-			// Extend trace a bit to ensure it hits the geometry
+
 			FVector TraceDirection = (Vertex - ViewOrigin).GetUnsafeNormal();
 			Vertex += TraceDirection * TraceTolerance;
 
-#		if QULOCK_SHOULD_SHOW_DEBUG_TRACES
-			DrawDebugLine(World, ViewOrigin, Vertex, FColor::Yellow, false, 1.f, 255);
-#		endif
+			QULOCK_DRAW_DEBUG_TRACE();
+			
 			FHitResult HitResult;
 			if (World->LineTraceSingleByChannel(HitResult, ViewOrigin, Vertex, ECC_Visibility))
 			{
+				QULOCK_DRAW_DEBUG_TRACE_RESULT();
+
 				// NOTE: this currently has a limitation: if the point is actually outside the view frustum,
 				// it will still report as a hit, but the actor might not be visible anymore due to occluding actors.
-				// QULOCK_SHOULD_USE_PROJECTED_VERTEX_TRACES tries to mitigate this, and does it pretty decently.
+				// QULOCK_SHOULD_USE_PROJECTED_VERTEX_TRACES tries to mitigate this,
+				// and does it pretty decently, although not perfectly.
 				
 				bNewIsInView = HitResult.GetActor() == Actor;
-#			if QULOCK_SHOULD_SHOW_DEBUG_TRACES
-				DrawDebugPoint(World, HitResult.Location, 10.f,
-							   bNewIsInView ? FColor::Green : FColor::Red, false, 1.f, 255);
-#			endif
+#			if QULOCK_SHOULD_USE_PROJECTED_VERTEX_TRACES
 				if (bNewIsInView)
 				{
-#				if QULOCK_SHOULD_USE_PROJECTED_VERTEX_TRACES
-					FVector ProjectedVertex = Vertex;
 					bool bShouldProject = false;
 				
 					for (FPlane const& Plane : FrustumPlaneArray)
 					{
-						if (Plane.PlaneDot(ProjectedVertex) > 0)
+						if (Plane.PlaneDot(Vertex) > 0)
 						{
 							auto PlaneNormal = Plane.GetNormal();
-							ProjectedVertex = ProjectPointOntoPlane(ProjectedVertex, ViewOrigin, PlaneNormal);
+							Vertex = ProjectPointOntoPlane(Vertex, ViewOrigin, PlaneNormal);
 							bShouldProject = true;
 						}
 					}
 				
 					if (bShouldProject)
 					{
-#					if QULOCK_SHOULD_SHOW_DEBUG_TRACES
-						DrawDebugLine(World, ViewOrigin, ProjectedVertex, FColor::Yellow, false, 1.f, 255);
-#					endif
+						QULOCK_DRAW_DEBUG_TRACE();
+						
 						HitResult.Reset();
-						if (World->LineTraceSingleByChannel(HitResult, ViewOrigin, ProjectedVertex, ECC_Visibility))
+						if (World->LineTraceSingleByChannel(HitResult, ViewOrigin, Vertex, ECC_Visibility))
 						{
+							QULOCK_DRAW_DEBUG_TRACE_RESULT();
+
 							bNewIsInView = HitResult.GetActor() == Actor;
-#						if QULOCK_SHOULD_SHOW_DEBUG_TRACES
-							DrawDebugPoint(World, HitResult.Location, 10.f,
-										   bNewIsInView ? FColor::Green : FColor::Red, false, 1.f, 255);
-#						endif
 						}
 					}
 				
 					if (bNewIsInView)
 					{
 						bIsInView = true;
-#					if !QULOCK_SHOULD_SHOW_DEBUG_TRACES
-						break;
-#					endif
+						QULOCK_BREAK_TRACE();
 					}
-#				else
-					bIsInView = true;
-#				if !QULOCK_SHOULD_SHOW_DEBUG_TRACES
-					break;
-#				endif
-#				endif
 				}
+#			else
+				if (bNewIsInView)
+				{
+					bIsInView = true;
+					QULOCK_BREAK_TRACE();
+				}
+#			endif
 			}
 		}
 	}
@@ -211,13 +227,18 @@ bool UQulockMovementComponent::IsActorWithinPlayerView(APlayerController* Player
 	return bIsInView;
 }
 
-bool UQulockMovementComponent::IsActorWithinPlayerFrustum(APlayerController* Player, AActor* Actor,
-														  TArray<FVector>& OutSupportVertexes) const
+bool UQulockComponent::IsActorWithinPlayerFrustum(APlayerController* Player, AActor* Actor,
+												  TArray<FVector>& OutSupportVertexes) const
 {
 	SCOPE_CYCLE_COUNTER(STAT_IsActorWithinPlayerFrustum);
 	
 	auto PlayerViewData = GetCachingSubsystem()->GetPlayerViewData(Player);
+	
+	FMatrix const& ViewProjMat = PlayerViewData.ViewProjMatrix;
+	FMatrix const& InvViewRotMat = PlayerViewData.InvViewRotMatrix;
+	FIntRect const& ViewRect = PlayerViewData.ViewRectangle;
 
+	// TODO this is quite inaccurate... but it will work for now
 	FBox ActorBounds = Actor->GetComponentsBoundingBox();
 
 	FVector ActorBoundsPos = ActorBounds.GetCenter();
@@ -232,9 +253,6 @@ bool UQulockMovementComponent::IsActorWithinPlayerFrustum(APlayerController* Pla
 	ActorBoundsVertexes.Add(ActorBoundsPos + FVector(-ActorBoundsSizeAbs.X, +ActorBoundsSizeAbs.Y, -ActorBoundsSizeAbs.Z));
 	ActorBoundsVertexes.Add(ActorBoundsPos + FVector(-ActorBoundsSizeAbs.X, -ActorBoundsSizeAbs.Y, +ActorBoundsSizeAbs.Z));
 	ActorBoundsVertexes.Add(ActorBoundsPos + FVector(-ActorBoundsSizeAbs.X, -ActorBoundsSizeAbs.Y, -ActorBoundsSizeAbs.Z));
-	
-	FMatrix const& ViewProjMat = PlayerViewData.ViewProjMatrix;
-	FIntRect const& ViewRect = PlayerViewData.ViewRectangle;
 
 	static FVector2D ScreenLeftDir(-1.f, 0.f);
 	static FVector2D ScreenRightDir(+1.f, 0.f);
@@ -288,9 +306,7 @@ bool UQulockMovementComponent::IsActorWithinPlayerFrustum(APlayerController* Pla
 	{
 		return false;
 	}
-
-	FMatrix const& InvViewRotMat = PlayerViewData.InvViewRotMatrix;
-
+	
 	// These are the axes of the player view's frame of reference
 	FVector WorldRightDir = InvViewRotMat.GetScaledAxis(EAxis::X);
 	FVector WorldLeftDir = -WorldRightDir;
@@ -308,19 +324,19 @@ bool UQulockMovementComponent::IsActorWithinPlayerFrustum(APlayerController* Pla
 	return true;
 }
 
-FMatrix UQulockMovementComponent::GetPlayerViewProjMatrix(APlayerController* Player) const
+FMatrix UQulockComponent::GetPlayerViewProjMatrix(APlayerController* Player) const
 {
 	auto PlayerViewData = GetCachingSubsystem()->GetPlayerViewData(Player);
 	return PlayerViewData.ViewProjMatrix;
 }
 
-FVector UQulockMovementComponent::GetPlayerViewOrigin(APlayerController* Player) const
+FVector UQulockComponent::GetPlayerViewOrigin(APlayerController* Player) const
 {
 	auto PlayerViewData = GetCachingSubsystem()->GetPlayerViewData(Player);
 	return PlayerViewData.ViewOrigin;
 }
 
-UPlayerViewDataCachingSubsystem* UQulockMovementComponent::GetCachingSubsystem() const
+UPlayerViewDataCachingSubsystem* UQulockComponent::GetCachingSubsystem() const
 {
 	return CachingSubsystem
 		 ? CachingSubsystem

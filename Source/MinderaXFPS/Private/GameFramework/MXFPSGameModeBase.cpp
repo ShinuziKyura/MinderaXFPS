@@ -1,10 +1,10 @@
 // Ricardo Santos, 2023
 
-#include "GameFramework/FixedLayoutGameModeBase.h"
+#include "GameFramework/MXFPSGameModeBase.h"
 
 #include "GameFramework/MXFPSGameStateBase.h"
 
-AFixedLayoutGameModeBase::AFixedLayoutGameModeBase(FObjectInitializer const& ObjectInitializer)
+AMXFPSGameModeBase::AMXFPSGameModeBase(FObjectInitializer const& ObjectInitializer)
 	: Super(ObjectInitializer)
 	, bUseRandomPlayerSpawn(false)
 {

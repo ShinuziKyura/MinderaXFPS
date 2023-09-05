@@ -6,7 +6,7 @@
 #include <InputActionValue.h>
 #include <GameFramework/Character.h>
 
-#include "MXFPSPlayerCharacter.generated.h"
+#include "LostSoulPlayerCharacter.generated.h"
 
 class UInputComponent;
 class USkeletalMeshComponent;
@@ -16,12 +16,12 @@ class UAnimMontage;
 class USoundBase;
 
 UCLASS(config=Game)
-class AMXFPSPlayerCharacter : public ACharacter
+class ALostSoulPlayerCharacter : public ACharacter
 {
 	GENERATED_BODY()
 	
 public:
-	AMXFPSPlayerCharacter();
+	ALostSoulPlayerCharacter();
 
 	virtual void BeginPlay();
 

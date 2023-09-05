@@ -1,6 +1,6 @@
 // Ricardo Santos, 2023
 
-#include "Actors/MXFPSPlayerCharacter.h"
+#include "Actors/LostSoulPlayerCharacter.h"
 
 #include <EnhancedInputComponent.h>
 #include <EnhancedInputSubsystems.h>
@@ -9,9 +9,9 @@
 #include <Components/CapsuleComponent.h>
 
 //////////////////////////////////////////////////////////////////////////
-// AMXFPSPlayerCharacter
+// ALostSoulPlayerCharacter
 
-AMXFPSPlayerCharacter::AMXFPSPlayerCharacter()
+ALostSoulPlayerCharacter::ALostSoulPlayerCharacter()
 {
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(50.f, 100.0f);
@@ -33,7 +33,7 @@ AMXFPSPlayerCharacter::AMXFPSPlayerCharacter()
 
 }
 
-void AMXFPSPlayerCharacter::BeginPlay()
+void ALostSoulPlayerCharacter::BeginPlay()
 {
 	// Call the base class  
 	Super::BeginPlay();
@@ -52,7 +52,7 @@ void AMXFPSPlayerCharacter::BeginPlay()
 
 //////////////////////////////////////////////////////////////////////////// Input
 
-void AMXFPSPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+void ALostSoulPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	// Set up action bindings
 	if (UEnhancedInputComponent* EnhancedInputComponent = CastChecked<UEnhancedInputComponent>(PlayerInputComponent))
@@ -62,15 +62,15 @@ void AMXFPSPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	//	EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
 
 		//Moving
-		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AMXFPSPlayerCharacter::Move);
+		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ALostSoulPlayerCharacter::Move);
 
 		//Looking
-		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AMXFPSPlayerCharacter::Look);
+		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ALostSoulPlayerCharacter::Look);
 	}
 }
 
 
-void AMXFPSPlayerCharacter::Move(FInputActionValue const& Value)
+void ALostSoulPlayerCharacter::Move(FInputActionValue const& Value)
 {
 	// input is a Vector2D
 	FVector2D MovementVector = Value.Get<FVector2D>();
@@ -83,7 +83,7 @@ void AMXFPSPlayerCharacter::Move(FInputActionValue const& Value)
 	}
 }
 
-void AMXFPSPlayerCharacter::Look(FInputActionValue const& Value)
+void ALostSoulPlayerCharacter::Look(FInputActionValue const& Value)
 {
 	// input is a Vector2D
 	FVector2D LookAxisVector = Value.Get<FVector2D>();
