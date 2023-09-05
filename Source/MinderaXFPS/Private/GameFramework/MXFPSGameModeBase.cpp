@@ -38,7 +38,7 @@ void AMXFPSGameModeBase::BeginPlay()
 		{
 			FNavLocation NavSpawnLocation;
 			NavMesh->GetRandomReachablePointInRadius(LevelOrigin, LevelRadius, NavSpawnLocation);
-
+			
 			SpawnLocation = NavSpawnLocation.Location;
 		}
 		while (FVector::DistSquared(SpawnLocation, PlayerSpawnLocation) < SafeRadiusSquared);
@@ -51,7 +51,7 @@ void AMXFPSGameModeBase::BeginPlay()
 
 	DisableAllInputAndMovement();
 
-	OnNotifyGameStart();
+	OnNotifyGameReady();
 }
 
 void AMXFPSGameModeBase::Tick(float DeltaSeconds)
@@ -93,17 +93,7 @@ AActor* AMXFPSGameModeBase::ChoosePlayerStart_Implementation(AController* Player
 	return PlayerStart;
 }
 
-void AMXFPSGameModeBase::OnNotifyGameStart_Implementation()
-{
-	FinishNotifyGameStart();
-}
-
-void AMXFPSGameModeBase::OnNotifyGameOver_Implementation()
-{
-	FinishNotifyGameOver();
-}
-
-void AMXFPSGameModeBase::FinishNotifyGameStart()
+void AMXFPSGameModeBase::ExecuteGameStart()
 {
 	if (!bIsGameRunning)
 	{
@@ -111,15 +101,12 @@ void AMXFPSGameModeBase::FinishNotifyGameStart()
 		GameStartTime = FDateTime::UtcNow();
 
 		EnableAllInputAndMovement();
+
+		OnNotifyGameStart();
 	}
 }
 
-void AMXFPSGameModeBase::FinishNotifyGameOver()
-{
-	GetWorld()->GetFirstPlayerController()->RestartLevel();
-}
-
-void AMXFPSGameModeBase::ProcessGameOver(APawn* ResponsibleActor)
+void AMXFPSGameModeBase::ExecuteGameOver(APawn* ResponsibleActor)
 {
 	if (bIsGameRunning)
 	{
@@ -130,6 +117,11 @@ void AMXFPSGameModeBase::ProcessGameOver(APawn* ResponsibleActor)
 		
 		OnNotifyGameOver();
 	}
+}
+
+void AMXFPSGameModeBase::RestartGame()
+{
+	GetWorld()->GetFirstPlayerController()->RestartLevel();
 }
 
 bool AMXFPSGameModeBase::IsGameRunning() const

@@ -20,21 +20,24 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
-
-	UFUNCTION(BlueprintNativeEvent)
+	
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnNotifyGameReady();
+	
+	UFUNCTION(BlueprintImplementableEvent)
 	void OnNotifyGameStart();
 	
-	UFUNCTION(BlueprintNativeEvent)
+	UFUNCTION(BlueprintImplementableEvent)
 	void OnNotifyGameOver();
 
 	UFUNCTION(BlueprintCallable)
-	void FinishNotifyGameStart();
+	void ExecuteGameStart();
 	
 	UFUNCTION(BlueprintCallable)
-	void FinishNotifyGameOver();
+	void ExecuteGameOver(APawn* ResponsibleActor);
 
 	UFUNCTION(BlueprintCallable)
-	void ProcessGameOver(APawn* ResponsibleActor);
+	void RestartGame();
 	
 	UFUNCTION(BlueprintPure)
 	bool IsGameRunning() const;
