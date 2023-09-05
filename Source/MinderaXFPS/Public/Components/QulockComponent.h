@@ -44,7 +44,7 @@ protected:
 	TSet<TSubclassOf<AActor>> ActorsToIgnore;
 	
 private:
-	void UpdateTraceParams(AActor* NewTarget);
+	void UpdateTraceParams(AActor* TargetActor);
 	
 	class UPlayerViewDataCachingSubsystem* GetCachingSubsystem() const;
 

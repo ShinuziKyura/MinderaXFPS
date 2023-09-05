@@ -3,6 +3,7 @@
 #include "GameFramework/MXFPSGameModeBase.h"
 
 #include <AIController.h>
+#include <EngineUtils.h>
 #include <GameFramework/Character.h>
 #include <GameFramework/CharacterMovementComponent.h>
 #include <GameFramework/PlayerStart.h>
@@ -10,7 +11,11 @@
 
 AMXFPSGameModeBase::AMXFPSGameModeBase(FObjectInitializer const& ObjectInitializer)
 	: Super(ObjectInitializer)
+	, PlayerScore{ 0 }
+	, bIsGameRunning{ false }
 {
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = true;
 }
 
 void AMXFPSGameModeBase::BeginPlay()
@@ -25,58 +30,156 @@ void AMXFPSGameModeBase::BeginPlay()
 	ARecastNavMesh* NavMesh = NavMeshPtr.Get();
 	checkf(NavMesh, TEXT("GameMode was improperly configured: missing NavMeshPtr!"));
 
+	float SafeRadiusSquared = FMath::Square(PlayerSafeRadius); 
 	for (int32 Index = 0; Index < NumEnemies; ++Index)
 	{
-		FNavLocation SpawnLocation;
-		NavMesh->GetRandomReachablePointInRadius(LevelOrigin, LevelRadius, SpawnLocation);
+		FVector SpawnLocation;
+		do
+		{
+			FNavLocation NavSpawnLocation;
+			NavMesh->GetRandomReachablePointInRadius(LevelOrigin, LevelRadius, NavSpawnLocation);
 
-		auto NewEnemy = World->SpawnActor<ACharacter>(EnemyClass, SpawnLocation.Location, FRotator::ZeroRotator);
+			SpawnLocation = NavSpawnLocation.Location;
+		}
+		while (FVector::DistSquared(SpawnLocation, PlayerSpawnLocation) < SafeRadiusSquared);
+
+		auto NewEnemy = World->SpawnActor<ACharacter>(EnemyClass, SpawnLocation, FRotator::ZeroRotator);
 
 		auto MovementComponent = NewEnemy->GetCharacterMovement();
-		MovementComponent->MaxWalkSpeed = EnemySpeed * 100.f; 
+		MovementComponent->MaxWalkSpeed = EnemySpeed * 100.f;
 	}
 
-	GameStartTime = FDateTime::UtcNow();
+	DisableAllInputAndMovement();
+
+	OnNotifyGameStart();
 }
 
 void AMXFPSGameModeBase::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	auto GameCurrentTime = FDateTime::UtcNow();
-	FTimespan ElapsedTime = GameCurrentTime - GameStartTime;
+	if (bIsGameRunning)
+	{
+		auto GameCurrentTime = FDateTime::UtcNow();
+		FTimespan ElapsedTime = GameCurrentTime - GameStartTime;
 	
-	CurrentScore = FMath::RoundToInt32(ElapsedTime.GetTotalSeconds());
+		PlayerScore = FMath::RoundToInt32(ElapsedTime.GetTotalSeconds());
+	}
 }
 
 AActor* AMXFPSGameModeBase::ChoosePlayerStart_Implementation(AController* Player)
 {
+	AActor* PlayerStart;
 	if (bUseRandomPlayerSpawn)
 	{
 		ARecastNavMesh* NavMesh = NavMeshPtr.LoadSynchronous();
 		checkf(NavMesh, TEXT("GameMode was improperly configured: missing NavMeshPtr!"));
 		
-		FNavLocation SpawnLocation;
-		NavMesh->GetRandomReachablePointInRadius(LevelOrigin, LevelRadius, SpawnLocation);
+		FNavLocation NavLocation;
+		NavMesh->GetRandomReachablePointInRadius(LevelOrigin, LevelRadius, NavLocation);
 
-		return GetWorld()->SpawnActor<APlayerStart>(SpawnLocation.Location,
-													FRotator(0.f, FMath::RandRange(0.f, 360.f), 0.f));
+		FVector SpawnLocation = NavLocation.Location;
+		FRotator SpawnRotation = FRotator{0.f, FMath::RandRange(0.f, 360.f), 0.f};
+
+		PlayerStart = GetWorld()->SpawnActor<APlayerStart>(SpawnLocation, SpawnRotation);
+	}
+	else
+	{
+		PlayerStart = Super::ChoosePlayerStart_Implementation(Player);
 	}
 
-	return Super::ChoosePlayerStart_Implementation(Player);
+	PlayerSpawnLocation = PlayerStart->GetActorLocation();
+
+	return PlayerStart;
 }
 
-int32 AMXFPSGameModeBase::GetCurrentScore() const
+void AMXFPSGameModeBase::OnNotifyGameStart_Implementation()
 {
-	return CurrentScore;
+	FinishNotifyGameStart();
 }
 
-void AMXFPSGameModeBase::NotifyPlayerCaptured(AActor* Player, AActor* Enemy)
+void AMXFPSGameModeBase::OnNotifyGameOver_Implementation()
 {
-	auto GameFinishTime = FDateTime::UtcNow();
-	FTimespan ElapsedTime = GameFinishTime - GameStartTime;
+	FinishNotifyGameOver();
+}
 
-	int32 FinalScore = FMath::RoundToInt32(ElapsedTime.GetTotalSeconds());
+void AMXFPSGameModeBase::FinishNotifyGameStart()
+{
+	if (!bIsGameRunning)
+	{
+		bIsGameRunning = true;
+		GameStartTime = FDateTime::UtcNow();
 
-	// TODO logic to finish and restart the game
+		EnableAllInputAndMovement();
+	}
+}
+
+void AMXFPSGameModeBase::FinishNotifyGameOver()
+{
+	GetWorld()->GetFirstPlayerController()->RestartLevel();
+}
+
+void AMXFPSGameModeBase::ProcessGameOver(APawn* ResponsibleActor)
+{
+	if (bIsGameRunning)
+	{
+		bIsGameRunning = false;
+		GameOverResponsibleActor = ResponsibleActor;
+
+		DisableAllInputAndMovement();
+		
+		OnNotifyGameOver();
+	}
+}
+
+bool AMXFPSGameModeBase::IsGameRunning() const
+{
+	return bIsGameRunning;
+}
+
+int32 AMXFPSGameModeBase::GetPlayerScore() const
+{
+	return PlayerScore;
+}
+
+APawn* AMXFPSGameModeBase::GetGameOverResponsibleActor() const
+{
+	return GameOverResponsibleActor;
+}
+
+void AMXFPSGameModeBase::EnableAllInputAndMovement() 
+{
+	auto World = GetWorld();
+	
+	for (TActorIterator<APawn> ActorIter{ World }; ActorIter; ++ActorIter)
+	{
+		APawn* Pawn = *ActorIter;
+		Pawn->EnableInput(nullptr);
+		
+		if (ACharacter* Character = Cast<ACharacter>(Pawn))
+		{
+			AController* Controller = Pawn->GetController();
+			bool bIsAIControlled = Controller ? Controller->IsA<AAIController>() : false;
+
+			auto MovementComponent = Character->GetCharacterMovement();
+			MovementComponent->SetMovementMode(bIsAIControlled ? MOVE_NavWalking : MOVE_Walking);
+		}
+	}
+}
+
+void AMXFPSGameModeBase::DisableAllInputAndMovement()
+{
+	auto World = GetWorld();
+	
+	for (TActorIterator<APawn> ActorIter{ World }; ActorIter; ++ActorIter)
+	{
+		APawn* Pawn = *ActorIter;
+		Pawn->DisableInput(nullptr);
+		
+		if (ACharacter* Character = Cast<ACharacter>(Pawn))
+		{
+			auto MovementComponent = Character->GetCharacterMovement();
+			MovementComponent->SetMovementMode(MOVE_None);
+		}
+	}
 }

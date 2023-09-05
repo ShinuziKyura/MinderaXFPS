@@ -355,11 +355,12 @@ FVector UQulockComponent::GetPlayerViewOrigin(APlayerController* Player) const
 	return PlayerViewData.ViewOrigin;
 }
 
-void UQulockComponent::UpdateTraceParams(AActor* NewTarget)
+void UQulockComponent::UpdateTraceParams(AActor* TargetActor)
 {
+	UWorld* World = GetWorld();
 	// We defer updating the params to the next tick because when this is called during BeginPlay,
 	// some actors might not have been spawned yet.
-	FTimerManager& TimerManager = GetWorld()->GetTimerManager();
+	FTimerManager& TimerManager = World->GetTimerManager();
 	
 	// If this was already requested this frame, reset the old timer,
 	// we'll set a new timer with the most up-to-date target.
@@ -373,19 +374,20 @@ void UQulockComponent::UpdateTraceParams(AActor* NewTarget)
 	TraceParams.ClearIgnoredActors();
 	
 	TraceParamsUpdateHandle = TimerManager.SetTimerForNextTick(
-		[this, NewTarget]
+		[this, TargetActor, TargetWorld = TWeakObjectPtr<UWorld>{World}]
 		{ 
-			UWorld* World = GetWorld();
-			
-			TraceTarget = NewTarget;
-			for (auto ActorClass : ActorsToIgnore)
+			if (UWorld* World = TargetWorld.Get())
 			{
-				for (TActorIterator ActorIter{World, ActorClass}; ActorIter; ++ActorIter)
+				TraceTarget = TargetActor;
+				for (auto ActorClass : ActorsToIgnore)
 				{
-					AActor* Actor = *ActorIter;
-					if (Actor != NewTarget)
+					for (TActorIterator ActorIter{World, ActorClass}; ActorIter; ++ActorIter)
 					{
-						TraceParams.AddIgnoredActor(Actor);
+						AActor* Actor = *ActorIter;
+						if (Actor != TargetActor)
+						{
+							TraceParams.AddIgnoredActor(Actor);
+						}
 					}
 				}
 			}

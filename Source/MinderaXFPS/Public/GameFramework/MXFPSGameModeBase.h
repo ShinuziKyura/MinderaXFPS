@@ -21,15 +21,37 @@ public:
 
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 
-	UFUNCTION(BlueprintPure)
-	int32 GetCurrentScore() const;
+	UFUNCTION(BlueprintNativeEvent)
+	void OnNotifyGameStart();
+	
+	UFUNCTION(BlueprintNativeEvent)
+	void OnNotifyGameOver();
 
 	UFUNCTION(BlueprintCallable)
-	void NotifyPlayerCaptured(AActor* Player, AActor* Enemy);
+	void FinishNotifyGameStart();
+	
+	UFUNCTION(BlueprintCallable)
+	void FinishNotifyGameOver();
+
+	UFUNCTION(BlueprintCallable)
+	void ProcessGameOver(APawn* ResponsibleActor);
+	
+	UFUNCTION(BlueprintPure)
+	bool IsGameRunning() const;
+	
+	UFUNCTION(BlueprintPure)
+	int32 GetPlayerScore() const;
+
+	UFUNCTION(BlueprintPure)
+	APawn* GetGameOverResponsibleActor() const;
 
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MXFPS|Player")
 	bool bUseRandomPlayerSpawn = false;
+
+	// The minimum distance that the enemies are spawned away from the player
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MXFPS|Player")
+	float PlayerSafeRadius = 1000.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MXFPS|AI")
 	TSubclassOf<APawn> EnemyClassPtr;
@@ -40,7 +62,7 @@ protected:
 
 	// Speed of the stalker enemies in meters/sec
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MXFPS|AI", meta = (UIMin = 1, UIMax = 10))
-	int32 EnemySpeed = 3;
+	int32 EnemySpeed = 4;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MXFPS|Map")
 	TSoftObjectPtr<class ARecastNavMesh> NavMeshPtr;
@@ -52,8 +74,16 @@ protected:
 	float LevelRadius = 10000.f;
 
 private:
-	int32 CurrentScore;
-	
+	void EnableAllInputAndMovement();
+	void DisableAllInputAndMovement();
+
+	UPROPERTY()
+	APawn* GameOverResponsibleActor;
+
+	FVector PlayerSpawnLocation;
+	int32 PlayerScore;
+
 	FDateTime GameStartTime;
+	bool bIsGameRunning;
 	
 };
