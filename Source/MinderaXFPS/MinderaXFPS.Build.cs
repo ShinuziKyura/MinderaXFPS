@@ -8,14 +8,17 @@ public class MinderaXFPS : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-		PublicDependencyModuleNames.AddRange(new string[]
-		{
-			"Core", 
-			"CoreUObject", 
-			"Engine", 
-			"InputCore",
-		//	"HeadMountedDisplay",
-			"EnhancedInput"
-		});
+		PrivateDependencyModuleNames.AddRange(
+			new[]
+			{
+				"AIModule",
+				"Core", 
+				"CoreUObject",
+				"Engine", 
+				"EnhancedInput",
+				"InputCore",
+				"NavigationSystem",
+			}
+		);
 	}
 }

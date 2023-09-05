@@ -2,6 +2,8 @@
 
 #include "Components/QulockComponent.h"
 
+#include <EngineUtils.h>
+
 #include "Subsystem/PlayerViewDataCachingSubsystem.h"
 
 DECLARE_STATS_GROUP(TEXT("Qulock Movement Logic"), STATGROUP_QulockMovement, STATCAT_Advanced);
@@ -64,17 +66,34 @@ UQulockComponent::UQulockComponent(FObjectInitializer const& ObjectInitializer)
 void UQulockComponent::BeginPlay()
 {
 	Super::BeginPlay();
+
+	UWorld* World = GetWorld();
 	
 	for (auto PlayerIndex : PlayersToCheck)
 	{
 		int32 PlayerControllerIndex = PlayerIndex - EAutoReceiveInput::Player0;
 		if (ensureMsgf(PlayerControllerIndex != INDEX_NONE, TEXT("PlayersToCheck was improperly configured")))
 		{
-			auto PlayerControllerIter = GetWorld()->GetPlayerControllerIterator();
+			auto PlayerControllerIter = World->GetPlayerControllerIterator();
 			PlayerControllerIter += PlayerControllerIndex;
 
 			SetupPlayerToCheck(PlayerControllerIter->Get());
 		}
+	}
+	
+	AActor* Target = GetOwner();
+	if (auto Controller = Cast<AController>(Target))
+	{
+		Controller->OnPossessedPawnChanged.AddDynamic(this, &UQulockComponent::HandleTraceTargetChanged);
+
+		if (auto TargetPawn = Controller->GetPawn())
+		{
+			UpdateTraceParams(TargetPawn);
+		}
+	}
+	else
+	{
+		UpdateTraceParams(Target);
 	}
 }
 
@@ -91,27 +110,27 @@ void UQulockComponent::SetupPlayerToCheck(APlayerController* PlayerController)
 
 bool UQulockComponent::CanMoveThisFrame() const
 {
-	if (bCanOwnerMove.IsSet())
+	if (!TraceTarget.IsValid())
 	{
-		return bCanOwnerMove.GetValue();
+		return false;
+	}
+	
+	if (bCachedCanMoveThisFrame.IsSet())
+	{
+		return bCachedCanMoveThisFrame.GetValue();
 	}
 
-	bCanOwnerMove = true;
+	bCachedCanMoveThisFrame = true;
 	for (auto Player : PlayerControllerSet)
 	{
-		AActor* TargetActor = GetOwner();
-		if (auto Controller = Cast<AController>(TargetActor))
+		if (IsActorWithinPlayerView(Player, TraceTarget.Get()))
 		{
-			TargetActor = Controller->GetPawn();
-		}
-		if (IsActorWithinPlayerView(Player, TargetActor))
-		{
-			bCanOwnerMove = false;
+			bCachedCanMoveThisFrame = false;
 			break;
 		}
 	}
 	
-	return bCanOwnerMove.GetValue();
+	return bCachedCanMoveThisFrame.GetValue();
 }
 
 // Having code in macros is not great for the maintainability of the code in the macros,
@@ -169,7 +188,7 @@ bool UQulockComponent::IsActorWithinPlayerView(APlayerController* Player, AActor
 			QULOCK_DRAW_DEBUG_TRACE();
 			
 			FHitResult HitResult;
-			if (World->LineTraceSingleByChannel(HitResult, ViewOrigin, Vertex, ECC_Visibility))
+			if (World->LineTraceSingleByChannel(HitResult, ViewOrigin, Vertex, ECC_Visibility, TraceParams))
 			{
 				QULOCK_DRAW_DEBUG_TRACE_RESULT();
 
@@ -199,7 +218,7 @@ bool UQulockComponent::IsActorWithinPlayerView(APlayerController* Player, AActor
 						QULOCK_DRAW_DEBUG_TRACE();
 						
 						HitResult.Reset();
-						if (World->LineTraceSingleByChannel(HitResult, ViewOrigin, Vertex, ECC_Visibility))
+						if (World->LineTraceSingleByChannel(HitResult, ViewOrigin, Vertex, ECC_Visibility, TraceParams))
 						{
 							QULOCK_DRAW_DEBUG_TRACE_RESULT();
 
@@ -336,9 +355,52 @@ FVector UQulockComponent::GetPlayerViewOrigin(APlayerController* Player) const
 	return PlayerViewData.ViewOrigin;
 }
 
+void UQulockComponent::UpdateTraceParams(AActor* NewTarget)
+{
+	// We defer updating the params to the next tick because when this is called during BeginPlay,
+	// some actors might not have been spawned yet.
+	FTimerManager& TimerManager = GetWorld()->GetTimerManager();
+	
+	// If this was already requested this frame, reset the old timer,
+	// we'll set a new timer with the most up-to-date target.
+	if (TraceParamsUpdateHandle.IsSet())
+	{
+		auto Handle = TraceParamsUpdateHandle.GetValue();
+		TimerManager.ClearTimer(Handle);
+	}
+	
+	TraceTarget.Reset();
+	TraceParams.ClearIgnoredActors();
+	
+	TraceParamsUpdateHandle = TimerManager.SetTimerForNextTick(
+		[this, NewTarget]
+		{ 
+			UWorld* World = GetWorld();
+			
+			TraceTarget = NewTarget;
+			for (auto ActorClass : ActorsToIgnore)
+			{
+				for (TActorIterator ActorIter{World, ActorClass}; ActorIter; ++ActorIter)
+				{
+					AActor* Actor = *ActorIter;
+					if (Actor != NewTarget)
+					{
+						TraceParams.AddIgnoredActor(Actor);
+					}
+				}
+			}
+		}
+	);
+}
+
 UPlayerViewDataCachingSubsystem* UQulockComponent::GetCachingSubsystem() const
 {
 	return CachingSubsystem
 		 ? CachingSubsystem
 		 : CachingSubsystem = GetWorld()->GetSubsystem<UPlayerViewDataCachingSubsystem>();
+}
+
+void UQulockComponent::HandleTraceTargetChanged(APawn*, APawn* NewPawn)
+{
+	UpdateTraceParams(NewPawn);
 }

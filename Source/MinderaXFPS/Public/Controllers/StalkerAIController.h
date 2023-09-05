@@ -14,15 +14,26 @@ class MINDERAXFPS_API AStalkerAIController : public AAIController
 
 public:
 	explicit AStalkerAIController(FObjectInitializer const& ObjectInitializer);
+
+	virtual void Tick(float DeltaSeconds) override;
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Stalker AI")
+	void OnCanInitiateMoveTo();
 	
-protected:
-	UFUNCTION(BlueprintCallable, Category = "Enemy Stalker")
+	UFUNCTION(BlueprintImplementableEvent, Category = "Stalker AI")
+	void OnShouldInterruptMoveTo();
+	
+	UFUNCTION(BlueprintCallable, Category = "Stalker AI")
 	void InterruptMoveTo();
 
-	UFUNCTION(BlueprintPure, Category = "Enemy Stalker")
-	bool IsMovingToTarget() const;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy Stalker")
+	UFUNCTION(BlueprintPure, Category = "Stalker AI")
+	bool IsMoveToInProgress() const;
+	
+protected:
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stalker AI")
 	class UQulockComponent* QulockComponent;
+
+private:
+	bool bCachedCanMove;
 	
 };

@@ -7,16 +7,39 @@
 AStalkerAIController::AStalkerAIController(FObjectInitializer const& ObjectInitializer)
 	: Super(ObjectInitializer)
 	, QulockComponent(ObjectInitializer.CreateDefaultSubobject<UQulockComponent>(this, TEXT("Qulock")))
+	, bCachedCanMove(false)
 {
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = true;
 }
 
-bool AStalkerAIController::IsMovingToTarget() const
+void AStalkerAIController::Tick(float DeltaSeconds)
 {
-	return GetCurrentMoveRequestID() != FAIRequestID::InvalidRequest;
+	Super::Tick(DeltaSeconds);
+
+	bool bCanMove = QulockComponent->CanMoveThisFrame();
+	if (bCanMove != bCachedCanMove)
+	{
+		if (bCanMove)
+		{
+			OnCanInitiateMoveTo();
+		}
+		else
+		{
+			OnShouldInterruptMoveTo();
+		}
+	}
+	
+	bCachedCanMove = bCanMove;
 }
 
 void AStalkerAIController::InterruptMoveTo()
 {
 	AAIController::StopMovement();
 //	AController::StopMovement();
+}
+
+bool AStalkerAIController::IsMoveToInProgress() const
+{
+	return GetPathFollowingComponent()->GetStatus() == EPathFollowingStatus::Moving; 
 }

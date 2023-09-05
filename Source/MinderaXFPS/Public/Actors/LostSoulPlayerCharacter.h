@@ -23,7 +23,9 @@ class ALostSoulPlayerCharacter : public ACharacter
 public:
 	ALostSoulPlayerCharacter();
 
-	virtual void BeginPlay();
+	virtual void BeginPlay() override;
+	
+	virtual void SetupPlayerInputComponent(UInputComponent* InputComponent) override;
 
 	// TODO remove these functions if not needed
 	/** Returns OnlyOwnerMesh subobject **/
@@ -55,17 +57,12 @@ protected:
 	/** Jump Input Action */
 //	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Input)
 //	class UInputAction* JumpAction;
-	
-	// APawn interface
-	virtual void SetupPlayerInputComponent(UInputComponent* InputComponent) override;
 	// End of APawn interface
 
-	/** Called for movement input */
+private:
 	void Move(FInputActionValue const& Value);
 
-	/** Called for looking input */
 	void Look(FInputActionValue const& Value);
-
 
 };
 

@@ -37,18 +37,29 @@ public:
 	FVector GetPlayerViewOrigin(APlayerController* Player) const;
 
 protected:
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "QulockMovement")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Qulock")
 	TSet<TEnumAsByte<EAutoReceiveInput::Type>> PlayersToCheck;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Qulock")
+	TSet<TSubclassOf<AActor>> ActorsToIgnore;
 	
 private:
+	void UpdateTraceParams(AActor* NewTarget);
+	
 	class UPlayerViewDataCachingSubsystem* GetCachingSubsystem() const;
+
+	UFUNCTION()
+	void HandleTraceTargetChanged(APawn* OldPawn, APawn* NewPawn);
 	
 	UPROPERTY()
 	TSet<APlayerController*> PlayerControllerSet;
 
 	UPROPERTY()
 	mutable UPlayerViewDataCachingSubsystem* CachingSubsystem = nullptr;
-	
-	mutable TFrameValue<bool> bCanOwnerMove;
-	
+
+	TWeakObjectPtr<AActor> TraceTarget;
+	FCollisionQueryParams TraceParams;
+
+	TFrameValue<FTimerHandle> TraceParamsUpdateHandle;
+	mutable TFrameValue<bool> bCachedCanMoveThisFrame;
 };
