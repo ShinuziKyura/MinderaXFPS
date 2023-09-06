@@ -51,7 +51,7 @@ void AMXFPSGameModeBase::BeginPlay()
 
 	DisableAllInputAndMovement();
 
-	OnNotifyGameReady();
+	GetWorldTimerManager().SetTimerForNextTick([this]{ OnNotifyGameReady(); });
 }
 
 void AMXFPSGameModeBase::Tick(float DeltaSeconds)
@@ -93,6 +93,11 @@ AActor* AMXFPSGameModeBase::ChoosePlayerStart_Implementation(AController* Player
 	return PlayerStart;
 }
 
+void AMXFPSGameModeBase::OnNotifyGameReady_Implementation()
+{
+	ExecuteGameStart();
+}
+
 void AMXFPSGameModeBase::ExecuteGameStart()
 {
 	if (!bIsGameRunning)
@@ -101,8 +106,8 @@ void AMXFPSGameModeBase::ExecuteGameStart()
 		GameStartTime = FDateTime::UtcNow();
 
 		EnableAllInputAndMovement();
-
-		OnNotifyGameStart();
+			
+		OnGameStart.Broadcast();
 	}
 }
 
@@ -115,7 +120,7 @@ void AMXFPSGameModeBase::ExecuteGameOver(APawn* ResponsibleActor)
 
 		DisableAllInputAndMovement();
 		
-		OnNotifyGameOver();
+		OnGameOver.Broadcast();
 	}
 }
 

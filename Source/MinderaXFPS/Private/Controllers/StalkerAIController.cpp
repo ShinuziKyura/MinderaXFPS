@@ -7,6 +7,7 @@
 AStalkerAIController::AStalkerAIController(FObjectInitializer const& ObjectInitializer)
 	: Super(ObjectInitializer)
 	, QulockComponent(ObjectInitializer.CreateDefaultSubobject<UQulockComponent>(this, TEXT("Qulock")))
+	, bShouldInterruptMoveTo(true)
 	, bCachedCanMove(false)
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -18,19 +19,16 @@ void AStalkerAIController::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	bool bCanMove = QulockComponent->CanMoveThisFrame();
-	if (bCanMove != bCachedCanMove)
-	{
-		if (bCanMove)
-		{
-			OnCanInitiateMoveTo();
-		}
-		else
-		{
-			OnShouldInterruptMoveTo();
-		}
-	}
-	
+
+	bool bCanMoveStateChanged = bCanMove != bCachedCanMove;
 	bCachedCanMove = bCanMove;
+	
+	if (bShouldInterruptMoveTo && bCanMoveStateChanged && !bCanMove && IsMoveToInProgress())
+	{
+		InterruptMoveTo();
+		
+		OnMoveToInterrupted();
+	}
 }
 
 void AStalkerAIController::InterruptMoveTo()
@@ -42,4 +40,9 @@ void AStalkerAIController::InterruptMoveTo()
 bool AStalkerAIController::IsMoveToInProgress() const
 {
 	return GetPathFollowingComponent()->GetStatus() == EPathFollowingStatus::Moving; 
+}
+
+bool AStalkerAIController::CanExecuteMoveTo() const
+{
+	return bCachedCanMove;
 }

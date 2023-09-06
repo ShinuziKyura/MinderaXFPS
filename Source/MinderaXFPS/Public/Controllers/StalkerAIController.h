@@ -17,21 +17,26 @@ public:
 
 	virtual void Tick(float DeltaSeconds) override;
 
-	UFUNCTION(BlueprintImplementableEvent, Category = "Stalker AI")
-	void OnCanInitiateMoveTo();
+	UFUNCTION(BlueprintImplementableEvent, Category = "Stalker")
+	void OnMoveToInterrupted();
 	
-	UFUNCTION(BlueprintImplementableEvent, Category = "Stalker AI")
-	void OnShouldInterruptMoveTo();
-	
-	UFUNCTION(BlueprintCallable, Category = "Stalker AI")
+	UFUNCTION(BlueprintCallable, Category = "Stalker")
 	void InterruptMoveTo();
 
-	UFUNCTION(BlueprintPure, Category = "Stalker AI")
+	UFUNCTION(BlueprintPure, Category = "Stalker")
 	bool IsMoveToInProgress() const;
+
+	UFUNCTION(BlueprintPure, Category = "Stalker")
+	bool CanExecuteMoveTo() const;
 	
 protected:
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Stalker AI")
+	UPROPERTY(EditAnywhere, Category = "Stalker")
 	class UQulockComponent* QulockComponent;
+	
+	// Whether we should interrupt any MoveTo call in progress
+	// if the Qulock component determines that the actor should not move
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stalker")
+	bool bShouldInterruptMoveTo;
 
 private:
 	bool bCachedCanMove;

@@ -21,14 +21,16 @@ public:
 
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 	
-	UFUNCTION(BlueprintImplementableEvent)
+	UFUNCTION(BlueprintNativeEvent)
 	void OnNotifyGameReady();
 	
-	UFUNCTION(BlueprintImplementableEvent)
-	void OnNotifyGameStart();
+	DECLARE_DYNAMIC_MULTICAST_DELEGATE(FGameStartEvent);
+	UPROPERTY(BlueprintAssignable)
+	FGameStartEvent OnGameStart;
 	
-	UFUNCTION(BlueprintImplementableEvent)
-	void OnNotifyGameOver();
+	DECLARE_DYNAMIC_MULTICAST_DELEGATE(FGameOverEvent);
+	UPROPERTY(BlueprintAssignable)
+	FGameOverEvent OnGameOver;
 
 	UFUNCTION(BlueprintCallable)
 	void ExecuteGameStart();

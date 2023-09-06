@@ -21,43 +21,28 @@ class ALostSoulPlayerCharacter : public ACharacter
 	GENERATED_BODY()
 	
 public:
-	ALostSoulPlayerCharacter();
+	explicit ALostSoulPlayerCharacter(FObjectInitializer const& ObjectInitializer);
 
 	virtual void BeginPlay() override;
 	
 	virtual void SetupPlayerInputComponent(UInputComponent* InputComponent) override;
 
-	// TODO remove these functions if not needed
-	/** Returns OnlyOwnerMesh subobject **/
-	USkeletalMeshComponent* GetOnlyOwnerMesh() const { return OnlyOwnerMesh; }
-	/** Returns FirstPersonCameraComponent subobject **/
-	UCameraComponent* GetFirstPersonCameraComponent() const { return FirstPersonCameraComponent; }
-
 protected:
 	/** Pawn mesh: 1st person view (arms; seen only by self) */
-	UPROPERTY(VisibleDefaultsOnly, Category=Mesh)
-	USkeletalMeshComponent* OnlyOwnerMesh; // TODO rename this
+	//UPROPERTY(VisibleDefaultsOnly, Category=Mesh)
+	//USkeletalMeshComponent* OnlyOwnerMesh;
 
-	/** First person camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category=Camera)
 	UCameraComponent* FirstPersonCameraComponent;
 
-	/** MappingContext */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Input)
-	class UInputMappingContext* DefaultMappingContext; // TODO maybe rename this to SimpleMovementMappingContext
-	
-	/** Look Input Action */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Input)
-	class UInputAction* LookAction;
+	class UInputMappingContext* DefaultMappingContext;
 
-	/** Move Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Input)
 	class UInputAction* MoveAction;
-
-	/** Jump Input Action */
-//	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Input)
-//	class UInputAction* JumpAction;
-	// End of APawn interface
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Input)
+	class UInputAction* LookAction;
 
 private:
 	void Move(FInputActionValue const& Value);
