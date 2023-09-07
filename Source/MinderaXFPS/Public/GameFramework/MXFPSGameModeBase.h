@@ -18,7 +18,7 @@ public:
 	int32 NumEnemies = 4;
 
 	UPROPERTY(BlueprintReadWrite)
-	int32 EnemySpeed = 4;
+	int32 EnemySpeed = 5;
 
 	UPROPERTY(BlueprintReadWrite)
 	int32 HighScore = -1;
@@ -105,12 +105,12 @@ protected:
 	UFUNCTION(BlueprintCallable)
 	void RestartGame();
 	
-	// Whether this instance of the GameMode class loads/stores any SaveGame data from/on disk
+	// Whether this instance of the GameMode class loads/stores any SaveGame data from/to disk
 	// This allows us to change any value in the SaveGame without necessarily using it.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MXFPS|Config")
 	bool bModifySaveGame = false;
 
-	// Whether this instance of the GameMode class should use data from the SaveGame.
+	// Whether this instance of the GameMode class should use data from the SaveGame to configure the game.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MXFPS|Config", meta = (EditCondition = "bModifySaveGame"))
 	bool bUseSaveGame = false;
 	
@@ -125,12 +125,12 @@ protected:
 	TSubclassOf<APawn> EnemyClassPtr;
 	
 	// Number of stalker enemies that will be spawned
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MXFPS|AI", meta = (UIMin = 4, UIMax = 16))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MXFPS|AI", meta = (UIMin = 4, UIMax = 20))
 	int32 NumEnemies = 4;
 
 	// Speed of the stalker enemies in meters/sec
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MXFPS|AI", meta = (UIMin = 1, UIMax = 10))
-	int32 EnemySpeed = 4;
+	int32 EnemySpeed = 5;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MXFPS|Map")
 	TSoftObjectPtr<class ARecastNavMesh> NavMeshPtr;
