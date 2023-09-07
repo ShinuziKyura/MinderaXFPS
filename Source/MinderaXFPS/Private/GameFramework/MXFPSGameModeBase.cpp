@@ -6,13 +6,34 @@
 #include <EngineUtils.h>
 #include <GameFramework/Character.h>
 #include <GameFramework/CharacterMovementComponent.h>
+#include <GameFramework/GameUserSettings.h>
 #include <GameFramework/PlayerStart.h>
+#include <Kismet/GameplayStatics.h>
 #include <NavMesh/RecastNavMesh.h>
 
+namespace
+{
+#if (UE_BUILD_DEBUG || UE_BUILD_DEVELOPMENT)
+	FName const SaveGameName = TEXT("MXFPSSaveGame_Debug");
+#else
+	FName const SaveGameName = TEXT("MXFPSSaveGame_0");
+#endif
+	
+	FName const UnknownSaveGameName = TEXT("SaveGame_Unknown");
+
+	FIntPoint BestWindowedResolution = FIntPoint::ZeroValue;
+	FIntPoint BestFullscreenResolution = FIntPoint(1280, 720);
+}
+
 AMXFPSGameModeBase::AMXFPSGameModeBase(FObjectInitializer const& ObjectInitializer)
-	: Super(ObjectInitializer)
+	: Super{ ObjectInitializer }
+	, GameOverResponsibleController{ nullptr }
 	, PlayerScore{ 0 }
+	, PlayerScoreOffset{ 0 }
+	, PlayerSpawnLocation{ FVector::ZeroVector }
 	, bIsGameRunning{ false }
+	, bIsGamePaused{ false }
+	, bShouldRestartGame{ false }
 {
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = true;
@@ -22,36 +43,81 @@ void AMXFPSGameModeBase::BeginPlay()
 {
 	Super::BeginPlay();
 
+	CacheBestResolutionPerWindowMode();
+
 	UWorld* World = GetWorld();
 	
 	UClass* EnemyClass = EnemyClassPtr.Get();
-	checkf(EnemyClass, TEXT("GameMode was improperly configured: missing EnemyClassPtr!"));
+	if (!ensureMsgf(EnemyClass, TEXT("GameMode was improperly configured: missing EnemyClassPtr!")))
+	{
+		return;
+	}
 	
 	ARecastNavMesh* NavMesh = NavMeshPtr.Get();
-	checkf(NavMesh, TEXT("GameMode was improperly configured: missing NavMeshPtr!"));
+	if (!ensureMsgf(NavMesh, TEXT("GameMode was improperly configured: missing NavMeshPtr!")))
+	{
+		return;
+	}
 
-	float SafeRadiusSquared = FMath::Square(PlayerSafeRadius); 
+	if (bModifySaveGame)
+	{
+		LoadSaveGame();
+		
+		if (bUseSaveGame)
+		{
+			NumEnemies = SaveGameData->NumEnemies;
+			EnemySpeed = SaveGameData->EnemySpeed;
+		}
+
+		ChangeWindowMode(SaveGameData->bIsFullscreen ? EWindowMode::Fullscreen : EWindowMode::Windowed); 
+	}
+
+	float SafeRadiusSquared = FMath::Square(PlayerSafeRadius);
 	for (int32 Index = 0; Index < NumEnemies; ++Index)
 	{
+		ACharacter* NewEnemy;
 		FVector SpawnLocation;
 		do
 		{
-			FNavLocation NavSpawnLocation;
-			NavMesh->GetRandomReachablePointInRadius(LevelOrigin, LevelRadius, NavSpawnLocation);
+			do
+			{
+				FNavLocation NavSpawnLocation;
+				NavMesh->GetRandomReachablePointInRadius(LevelOrigin, LevelRadius, NavSpawnLocation);
 			
-			SpawnLocation = NavSpawnLocation.Location;
+				SpawnLocation = NavSpawnLocation.Location;
+			}
+			while (FVector::DistSquared(SpawnLocation, PlayerSpawnLocation) < SafeRadiusSquared);
+
+			NewEnemy = World->SpawnActor<ACharacter>(EnemyClass, SpawnLocation, FRotator::ZeroRotator);
 		}
-		while (FVector::DistSquared(SpawnLocation, PlayerSpawnLocation) < SafeRadiusSquared);
+		while (!NewEnemy);
 
-		auto NewEnemy = World->SpawnActor<ACharacter>(EnemyClass, SpawnLocation, FRotator::ZeroRotator);
-
-		auto MovementComponent = NewEnemy->GetCharacterMovement();
+		UCharacterMovementComponent* MovementComponent = NewEnemy->GetCharacterMovement();
 		MovementComponent->MaxWalkSpeed = EnemySpeed * 100.f;
 	}
 
 	DisableAllInputAndMovement();
 
 	GetWorldTimerManager().SetTimerForNextTick([this]{ OnNotifyGameReady(); });
+}
+
+void AMXFPSGameModeBase::EndPlay(EEndPlayReason::Type const EndPlayReason)
+{
+	Super::EndPlay(EndPlayReason);
+
+	if (bModifySaveGame)
+	{
+		if (bUseSaveGame)
+		{
+			// If the exit was not requested by the player, check and update highscore
+			if (HasNewHighscore() && GetGameOverResponsibleController() != GetWorld()->GetFirstPlayerController())
+			{
+				SaveGameData->HighScore = GetPlayerScore();
+			}
+		}
+		
+		StoreSaveGame();
+	}
 }
 
 void AMXFPSGameModeBase::Tick(float DeltaSeconds)
@@ -61,7 +127,7 @@ void AMXFPSGameModeBase::Tick(float DeltaSeconds)
 	if (bIsGameRunning)
 	{
 		auto GameCurrentTime = FDateTime::UtcNow();
-		FTimespan ElapsedTime = GameCurrentTime - GameStartTime;
+		FTimespan ElapsedTime = GameCurrentTime - GameRunningTime;
 	
 		PlayerScore = FMath::RoundToInt32(ElapsedTime.GetTotalSeconds());
 	}
@@ -88,7 +154,10 @@ AActor* AMXFPSGameModeBase::ChoosePlayerStart_Implementation(AController* Player
 		PlayerStart = Super::ChoosePlayerStart_Implementation(Player);
 	}
 
-	PlayerSpawnLocation = PlayerStart->GetActorLocation();
+	if (PlayerStart)
+	{
+		PlayerSpawnLocation = PlayerStart->GetActorLocation();
+	}
 
 	return PlayerStart;
 }
@@ -100,10 +169,10 @@ void AMXFPSGameModeBase::OnNotifyGameReady_Implementation()
 
 void AMXFPSGameModeBase::ExecuteGameStart()
 {
-	if (!bIsGameRunning)
+	if (ensure(!bIsGameRunning))
 	{
 		bIsGameRunning = true;
-		GameStartTime = FDateTime::UtcNow();
+		GameRunningTime = FDateTime::UtcNow();
 
 		EnableAllInputAndMovement();
 			
@@ -111,17 +180,117 @@ void AMXFPSGameModeBase::ExecuteGameStart()
 	}
 }
 
-void AMXFPSGameModeBase::ExecuteGameOver(APawn* ResponsibleActor)
+void AMXFPSGameModeBase::ExecuteGameOver(AController* ResponsibleController, bool bShouldRestart)
 {
-	if (bIsGameRunning)
+	if (ensure(bIsGameRunning))
 	{
+		check(ResponsibleController);
+		
 		bIsGameRunning = false;
-		GameOverResponsibleActor = ResponsibleActor;
+		bShouldRestartGame = bShouldRestart;
+		GameOverResponsibleController = ResponsibleController;
 
 		DisableAllInputAndMovement();
-		
+
 		OnGameOver.Broadcast();
 	}
+}
+
+void AMXFPSGameModeBase::ResumeGame()
+{
+	if (ensure(bIsGamePaused))
+	{
+		bIsGamePaused = false;
+		GameRunningTime = FDateTime::UtcNow();
+
+		EnableAllInputAndMovement();
+
+		OnGameResumed.Broadcast();
+	}
+}
+
+void AMXFPSGameModeBase::PauseGame()
+{
+	if (ensure(!bIsGamePaused))
+	{
+		bIsGamePaused = true;
+		PlayerScoreOffset += PlayerScore;
+		PlayerScore = 0;
+		
+		DisableAllInputAndMovement();
+
+		OnGamePaused.Broadcast();
+	}
+}
+
+void AMXFPSGameModeBase::ResetHighscore()
+{
+	if (bModifySaveGame)
+	{
+		SaveGameData->HighScore = -1;
+	}
+}
+
+void AMXFPSGameModeBase::ChangeWindowMode(EWindowMode::Type NewWindowMode)
+{
+	FIntPoint NewResolution;
+	switch (NewWindowMode)
+	{
+		case EWindowMode::Fullscreen:
+			NewWindowMode = EWindowMode::WindowedFullscreen; 
+		case EWindowMode::WindowedFullscreen:
+			NewResolution = BestFullscreenResolution;
+			break;
+		case EWindowMode::Windowed:
+			NewResolution = BestWindowedResolution;
+			break;
+		default:
+			ensureMsgf(false, TEXT("Invalid WindowMode"));
+			return;
+	}
+
+	auto GameUserSettings = UGameUserSettings::GetGameUserSettings();
+	if (NewWindowMode != GameUserSettings->GetFullscreenMode())
+	{	
+		GameUserSettings->SetScreenResolution(NewResolution);
+		GameUserSettings->SetFullscreenMode(NewWindowMode);
+		GameUserSettings->ApplySettings(false);
+	}
+}
+
+bool AMXFPSGameModeBase::IsGameRunning() const
+{
+	return bIsGameRunning && !bIsGamePaused;
+}
+
+bool AMXFPSGameModeBase::ShouldRestartGame() const
+{
+	return bShouldRestartGame;
+}
+
+bool AMXFPSGameModeBase::HasNewHighscore() const
+{
+	return GetPlayerScore() > GetPlayerHighscore();
+}
+
+int32 AMXFPSGameModeBase::GetPlayerScore() const
+{
+	return PlayerScore + PlayerScoreOffset;
+}
+
+int32 AMXFPSGameModeBase::GetPlayerHighscore() const
+{
+	return ensure(bModifySaveGame) ? SaveGameData->HighScore : -1;
+}
+
+AController* AMXFPSGameModeBase::GetGameOverResponsibleController() const
+{
+	return GameOverResponsibleController;
+}
+
+UMXFPSSaveGameData* AMXFPSGameModeBase::GetSaveGameData() const
+{
+	return SaveGameData;
 }
 
 void AMXFPSGameModeBase::RestartGame()
@@ -129,24 +298,10 @@ void AMXFPSGameModeBase::RestartGame()
 	GetWorld()->GetFirstPlayerController()->RestartLevel();
 }
 
-bool AMXFPSGameModeBase::IsGameRunning() const
-{
-	return bIsGameRunning;
-}
-
-int32 AMXFPSGameModeBase::GetPlayerScore() const
-{
-	return PlayerScore;
-}
-
-APawn* AMXFPSGameModeBase::GetGameOverResponsibleActor() const
-{
-	return GameOverResponsibleActor;
-}
-
+// ReSharper disable once CppMemberFunctionMayBeConst
 void AMXFPSGameModeBase::EnableAllInputAndMovement() 
 {
-	auto World = GetWorld();
+	UWorld* World = GetWorld();
 	
 	for (TActorIterator<APawn> ActorIter{ World }; ActorIter; ++ActorIter)
 	{
@@ -158,15 +313,16 @@ void AMXFPSGameModeBase::EnableAllInputAndMovement()
 			AController* Controller = Pawn->GetController();
 			bool bIsAIControlled = Controller ? Controller->IsA<AAIController>() : false;
 
-			auto MovementComponent = Character->GetCharacterMovement();
+			UCharacterMovementComponent* MovementComponent = Character->GetCharacterMovement();
 			MovementComponent->SetMovementMode(bIsAIControlled ? MOVE_NavWalking : MOVE_Walking);
 		}
 	}
 }
 
+// ReSharper disable once CppMemberFunctionMayBeConst
 void AMXFPSGameModeBase::DisableAllInputAndMovement()
 {
-	auto World = GetWorld();
+	UWorld* World = GetWorld();
 	
 	for (TActorIterator<APawn> ActorIter{ World }; ActorIter; ++ActorIter)
 	{
@@ -175,8 +331,55 @@ void AMXFPSGameModeBase::DisableAllInputAndMovement()
 		
 		if (ACharacter* Character = Cast<ACharacter>(Pawn))
 		{
-			auto MovementComponent = Character->GetCharacterMovement();
+			UCharacterMovementComponent* MovementComponent = Character->GetCharacterMovement();
 			MovementComponent->SetMovementMode(MOVE_None);
+		}
+	}
+}
+
+void AMXFPSGameModeBase::LoadSaveGame()
+{
+	if (auto SaveGame = UGameplayStatics::LoadGameFromSlot(SaveGameName.ToString(), 0))
+	{
+		SaveGameData = Cast<UMXFPSSaveGameData>(SaveGame);
+
+		if (!ensureMsgf(SaveGameData, TEXT("SaveGame exists but has unknown class type!")))
+		{
+			UGameplayStatics::SaveGameToSlot(SaveGame, UnknownSaveGameName.ToString(), 0);
+		}
+	}
+
+	if (!SaveGameData)
+	{
+		SaveGameData = NewObject<UMXFPSSaveGameData>(this, SaveGameName);
+	}
+}
+
+// ReSharper disable once CppMemberFunctionMayBeConst
+void AMXFPSGameModeBase::StoreSaveGame()
+{
+	UGameplayStatics::SaveGameToSlot(SaveGameData, SaveGameName.ToString(), 0);
+}
+
+void AMXFPSGameModeBase::CacheBestResolutionPerWindowMode()
+{
+	if (BestWindowedResolution == FIntPoint::ZeroValue)
+	{
+		TArray<FIntPoint> SupportedResolutions;
+		if (UKismetSystemLibrary::GetSupportedFullscreenResolutions(SupportedResolutions))
+		{
+			for (auto Resolution : SupportedResolutions)
+			{
+				if (Resolution.X >= BestFullscreenResolution.X)
+				{
+					BestWindowedResolution = BestFullscreenResolution;
+					BestFullscreenResolution = Resolution;
+				}
+			}
+		}
+		else
+		{
+			BestWindowedResolution = BestFullscreenResolution;
 		}
 	}
 }

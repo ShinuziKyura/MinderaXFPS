@@ -69,7 +69,7 @@ void UQulockComponent::BeginPlay()
 
 	UWorld* World = GetWorld();
 	
-	for (auto PlayerIndex : PlayersToCheck)
+	for (EAutoReceiveInput::Type PlayerIndex : PlayersToCheck)
 	{
 		int32 PlayerControllerIndex = PlayerIndex - EAutoReceiveInput::Player0;
 		if (ensureMsgf(PlayerControllerIndex != INDEX_NONE, TEXT("PlayersToCheck was improperly configured")))
@@ -86,7 +86,7 @@ void UQulockComponent::BeginPlay()
 	{
 		Controller->OnPossessedPawnChanged.AddDynamic(this, &UQulockComponent::HandleTraceTargetChanged);
 
-		if (auto TargetPawn = Controller->GetPawn())
+		if (APawn* TargetPawn = Controller->GetPawn())
 		{
 			UpdateTraceParams(TargetPawn);
 		}
@@ -121,7 +121,7 @@ bool UQulockComponent::CanMoveThisFrame() const
 	}
 
 	bCachedCanMoveThisFrame = true;
-	for (auto Player : PlayerControllerSet)
+	for (APlayerController* Player : PlayerControllerSet)
 	{
 		if (IsActorWithinPlayerView(Player, TraceTarget.Get()))
 		{
@@ -154,8 +154,8 @@ bool UQulockComponent::IsActorWithinPlayerView(APlayerController* Player, AActor
 {
 	SCOPE_CYCLE_COUNTER(STAT_IsActorWithinPlayerView);
 	
-	auto World = GetWorld();
-	auto PlayerViewData = GetCachingSubsystem()->GetPlayerViewData(Player);
+	UWorld* World = GetWorld();
+	FPlayerViewData PlayerViewData = GetCachingSubsystem()->GetPlayerViewData(Player);
 
 	FVector const& ViewOrigin = PlayerViewData.ViewOrigin;
 #if QULOCK_SHOULD_USE_PROJECTED_VERTEX_TRACES
@@ -207,7 +207,7 @@ bool UQulockComponent::IsActorWithinPlayerView(APlayerController* Player, AActor
 					{
 						if (Plane.PlaneDot(Vertex) > 0)
 						{
-							auto PlaneNormal = Plane.GetNormal();
+							FVector PlaneNormal = Plane.GetNormal();
 							Vertex = ProjectPointOntoPlane(Vertex, ViewOrigin, PlaneNormal);
 							bShouldProject = true;
 						}
@@ -251,7 +251,7 @@ bool UQulockComponent::IsActorWithinPlayerFrustum(APlayerController* Player, AAc
 {
 	SCOPE_CYCLE_COUNTER(STAT_IsActorWithinPlayerFrustum);
 	
-	auto PlayerViewData = GetCachingSubsystem()->GetPlayerViewData(Player);
+	FPlayerViewData PlayerViewData = GetCachingSubsystem()->GetPlayerViewData(Player);
 	
 	FMatrix const& ViewProjMat = PlayerViewData.ViewProjMatrix;
 	FMatrix const& InvViewRotMat = PlayerViewData.InvViewRotMatrix;
@@ -345,13 +345,13 @@ bool UQulockComponent::IsActorWithinPlayerFrustum(APlayerController* Player, AAc
 
 FMatrix UQulockComponent::GetPlayerViewProjMatrix(APlayerController* Player) const
 {
-	auto PlayerViewData = GetCachingSubsystem()->GetPlayerViewData(Player);
+	FPlayerViewData PlayerViewData = GetCachingSubsystem()->GetPlayerViewData(Player);
 	return PlayerViewData.ViewProjMatrix;
 }
 
 FVector UQulockComponent::GetPlayerViewOrigin(APlayerController* Player) const
 {
-	auto PlayerViewData = GetCachingSubsystem()->GetPlayerViewData(Player);
+	FPlayerViewData PlayerViewData = GetCachingSubsystem()->GetPlayerViewData(Player);
 	return PlayerViewData.ViewOrigin;
 }
 
@@ -366,7 +366,7 @@ void UQulockComponent::UpdateTraceParams(AActor* TargetActor)
 	// we'll set a new timer with the most up-to-date target.
 	if (TraceParamsUpdateHandle.IsSet())
 	{
-		auto Handle = TraceParamsUpdateHandle.GetValue();
+		FTimerHandle Handle = TraceParamsUpdateHandle.GetValue();
 		TimerManager.ClearTimer(Handle);
 	}
 	

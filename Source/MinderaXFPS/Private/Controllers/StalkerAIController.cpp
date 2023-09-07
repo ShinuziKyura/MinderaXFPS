@@ -7,7 +7,6 @@
 AStalkerAIController::AStalkerAIController(FObjectInitializer const& ObjectInitializer)
 	: Super(ObjectInitializer)
 	, QulockComponent(ObjectInitializer.CreateDefaultSubobject<UQulockComponent>(this, TEXT("Qulock")))
-	, bShouldInterruptMoveTo(true)
 	, bCachedCanMove(false)
 {
 	PrimaryActorTick.bCanEverTick = true;

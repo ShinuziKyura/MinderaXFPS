@@ -15,9 +15,10 @@ public class MinderaXFPS : ModuleRules
 				"Core", 
 				"CoreUObject",
 				"Engine", 
-				"EnhancedInput",
+			//	"EnhancedInput",
 				"InputCore",
 				"NavigationSystem",
+				"UMG", 
 			}
 		);
 	}

@@ -4,12 +4,15 @@
 
 #include <EnhancedInputComponent.h>
 #include <EnhancedInputSubsystems.h>
-//#include <Animation/AnimInstance.h>
+#include <Animation/AnimInstance.h>
 #include <Camera/CameraComponent.h>
 #include <Components/CapsuleComponent.h>
 
+#include "GameFramework/MXFPSGameModeBase.h"
+
 ALostSoulPlayerCharacter::ALostSoulPlayerCharacter(FObjectInitializer const& ObjectInitializer)
-	: FirstPersonCameraComponent{ ObjectInitializer.CreateDefaultSubobject<UCameraComponent>(this, TEXT("FirstPersonCamera")) }
+	: Super{ ObjectInitializer }
+	, FirstPersonCameraComponent{ ObjectInitializer.CreateDefaultSubobject<UCameraComponent>(this, TEXT("FirstPersonCamera")) }
 {
 	GetCapsuleComponent()->InitCapsuleSize(50.f, 100.0f);
 		
@@ -48,6 +51,9 @@ void ALostSoulPlayerCharacter::SetupPlayerInputComponent(UInputComponent* Player
 	{
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ALostSoulPlayerCharacter::Move);
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ALostSoulPlayerCharacter::Look);
+
+		FEnhancedInputActionEventBinding& Action = EnhancedInputComponent->BindAction(PauseAction, ETriggerEvent::Triggered, this,
+		                                                                             &ALostSoulPlayerCharacter::Pause);
 	}
 }
 
@@ -71,5 +77,16 @@ void ALostSoulPlayerCharacter::Look(FInputActionValue const& Value)
 	{
 		AddControllerYawInput(LookAxisVector.X);
 		AddControllerPitchInput(LookAxisVector.Y);
+	}
+}
+
+// ReSharper disable once CppMemberFunctionMayBeConst
+void ALostSoulPlayerCharacter::Pause(FInputActionValue const&)
+{
+	auto GameMode = GetWorld()->GetAuthGameMode<AMXFPSGameModeBase>();
+
+	if (GameMode->IsGameRunning())
+	{
+		GameMode->PauseGame();
 	}
 }

@@ -36,7 +36,7 @@ protected:
 	// Whether we should interrupt any MoveTo call in progress
 	// if the Qulock component determines that the actor should not move
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stalker")
-	bool bShouldInterruptMoveTo;
+	bool bShouldInterruptMoveTo = true;
 
 private:
 	bool bCachedCanMove;

@@ -4,8 +4,28 @@
 
 #include <CoreMinimal.h>
 #include <GameFramework/GameModeBase.h>
+#include <GameFramework/SaveGame.h>
 
 #include "MXFPSGameModeBase.generated.h"
+
+UCLASS(BlueprintType)
+class UMXFPSSaveGameData : public USaveGame
+{
+	GENERATED_BODY()
+
+public:
+	UPROPERTY(BlueprintReadWrite)
+	int32 NumEnemies = 4;
+
+	UPROPERTY(BlueprintReadWrite)
+	int32 EnemySpeed = 4;
+
+	UPROPERTY(BlueprintReadWrite)
+	int32 HighScore = -1;
+
+	UPROPERTY(BlueprintReadWrite)
+	bool bIsFullscreen = true;
+};
 
 UCLASS(Blueprintable)
 class MINDERAXFPS_API AMXFPSGameModeBase : public AGameModeBase
@@ -14,8 +34,10 @@ class MINDERAXFPS_API AMXFPSGameModeBase : public AGameModeBase
 
 public:
 	explicit AMXFPSGameModeBase(FObjectInitializer const& ObjectInitializer);
-	
+
 	virtual void BeginPlay() override;
+
+	virtual void EndPlay(EEndPlayReason::Type const EndPlayReason) override;
 
 	virtual void Tick(float DeltaSeconds) override;
 
@@ -31,26 +53,67 @@ public:
 	DECLARE_DYNAMIC_MULTICAST_DELEGATE(FGameOverEvent);
 	UPROPERTY(BlueprintAssignable)
 	FGameOverEvent OnGameOver;
+	
+	DECLARE_DYNAMIC_MULTICAST_DELEGATE(FGameResumedEvent);
+	UPROPERTY(BlueprintAssignable)
+	FGameOverEvent OnGameResumed;
+	
+	DECLARE_DYNAMIC_MULTICAST_DELEGATE(FGamePausedEvent);
+	UPROPERTY(BlueprintAssignable)
+	FGameStartEvent OnGamePaused;
 
 	UFUNCTION(BlueprintCallable)
 	void ExecuteGameStart();
 	
 	UFUNCTION(BlueprintCallable)
-	void ExecuteGameOver(APawn* ResponsibleActor);
+	void ExecuteGameOver(AController* ResponsibleController, bool bShouldRestart);
 
 	UFUNCTION(BlueprintCallable)
-	void RestartGame();
+	void ResumeGame();
+	
+	UFUNCTION(BlueprintCallable)
+	void PauseGame();
+
+	UFUNCTION(BlueprintCallable)
+	void ResetHighscore();
+
+	UFUNCTION(BlueprintCallable)
+	void ChangeWindowMode(EWindowMode::Type NewWindowMode);
 	
 	UFUNCTION(BlueprintPure)
 	bool IsGameRunning() const;
+
+	UFUNCTION(BlueprintPure)
+	bool ShouldRestartGame() const;
+
+	UFUNCTION(BlueprintPure)
+	bool HasNewHighscore() const;
 	
 	UFUNCTION(BlueprintPure)
 	int32 GetPlayerScore() const;
+	
+	UFUNCTION(BlueprintPure)
+	int32 GetPlayerHighscore() const;
 
 	UFUNCTION(BlueprintPure)
-	APawn* GetGameOverResponsibleActor() const;
+	AController* GetGameOverResponsibleController() const;
+
+	UFUNCTION(BlueprintPure)
+	UMXFPSSaveGameData* GetSaveGameData() const;
 
 protected:
+	UFUNCTION(BlueprintCallable)
+	void RestartGame();
+	
+	// Whether this instance of the GameMode class loads/stores any SaveGame data from/on disk
+	// This allows us to change any value in the SaveGame without necessarily using it.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MXFPS|Config")
+	bool bModifySaveGame = false;
+
+	// Whether this instance of the GameMode class should use data from the SaveGame.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MXFPS|Config", meta = (EditCondition = "bModifySaveGame"))
+	bool bUseSaveGame = false;
+	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "MXFPS|Player")
 	bool bUseRandomPlayerSpawn = false;
 
@@ -82,13 +145,24 @@ private:
 	void EnableAllInputAndMovement();
 	void DisableAllInputAndMovement();
 
+	void LoadSaveGame();
+	void StoreSaveGame();
+
+	static void CacheBestResolutionPerWindowMode();
+
 	UPROPERTY()
-	APawn* GameOverResponsibleActor;
+	UMXFPSSaveGameData* SaveGameData;
+
+	UPROPERTY()
+	AController* GameOverResponsibleController;
+	
+	int32 PlayerScore;
+	int32 PlayerScoreOffset; // Used to keep track of PlayerScore between pauses
 
 	FVector PlayerSpawnLocation;
-	int32 PlayerScore;
-
-	FDateTime GameStartTime;
+	FDateTime GameRunningTime;
 	bool bIsGameRunning;
-	
+	bool bIsGamePaused;
+	bool bShouldRestartGame;
+
 };

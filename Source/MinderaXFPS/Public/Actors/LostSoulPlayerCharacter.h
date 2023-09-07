@@ -43,11 +43,16 @@ protected:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Input)
 	class UInputAction* LookAction;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Input)
+	class UInputAction* PauseAction;
 
 private:
 	void Move(FInputActionValue const& Value);
 
 	void Look(FInputActionValue const& Value);
+	
+	void Pause(FInputActionValue const& Value);
 
 };
 
